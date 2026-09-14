@@ -57,6 +57,14 @@ FILTER_WIDE_MARUBOZU = {
     "range_pct_gt": 10.480694,
 }
 
+FILTER_LOW_PRICE_WIDE_LIQ = {
+    "atr_pct_le": 10.885584,
+    "upper_wick_pct_gt": 0.019433,
+    "signal_close_le": 38.279999,
+    "range_pct_gt": 7.479814,
+    "avg20_turnover_cr_gt": 39.406544,
+}
+
 # ─────────────────────────────────────────────
 # Backtest date range
 # ─────────────────────────────────────────────

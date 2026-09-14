@@ -66,6 +66,19 @@ def load_all_daily_data(data_dir: str) -> Dict[str, pd.DataFrame]:
     return all_data
 
 
+def get_index_symbols(index_name: str, companies_dir: str = r"c:\Users\Yug\Desktop\Overnight strategy\companies") -> list:
+    """Read CSV and return list of symbols for the given index."""
+    filepath = os.path.join(companies_dir, f"{index_name}.csv")
+    if not os.path.exists(filepath):
+        print(f"Warning: {filepath} not found.")
+        return []
+        
+    df = pd.read_csv(filepath)
+    if "Symbol" in df.columns:
+        return df["Symbol"].tolist()
+    return []
+
+
 def select_universe(
     all_data: Dict[str, pd.DataFrame],
     top_n: int,
@@ -96,8 +109,8 @@ def select_universe(
         mask = (df["date"] >= start_dt) & (df["date"] <= end_dt)
         period_df = df[mask]
 
-        if len(period_df) < 20:
-            # Need minimum data for meaningful turnover calculation
+        if len(period_df) < 500:
+            # Need minimum 500 days of data to match the strict universe selection
             continue
 
         # Median daily turnover (in raw units, not crores — ranking is invariant)

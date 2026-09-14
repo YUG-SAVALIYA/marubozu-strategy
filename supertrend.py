@@ -6,8 +6,10 @@ from typing import List, Tuple, Dict, Optional
 
 import numpy as np
 import pandas as pd
+from numba import njit
 
 
+@njit(cache=True)
 def compute_atr(
     high: np.ndarray,
     low: np.ndarray,
@@ -52,6 +54,7 @@ def compute_atr(
     return atr
 
 
+@njit(cache=True)
 def compute_supertrend(
     high: np.ndarray,
     low: np.ndarray,
@@ -85,6 +88,9 @@ def compute_supertrend(
     final_upper = np.full(n, np.nan, dtype=np.float64)
     final_lower = np.full(n, np.nan, dtype=np.float64)
     direction = np.zeros(n, dtype=np.int8)
+
+    if n < period:
+        return final_upper, final_lower, direction
 
     # Initialize at the first valid ATR index
     start_idx = period - 1

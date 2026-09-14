@@ -12,7 +12,7 @@ from flask_cors import CORS
 
 # Import the existing backtester modules
 from config import BacktestConfig
-from data_loader import load_all_daily_data, select_universe
+from data_loader import load_all_daily_data, select_universe, get_index_symbols
 from backtester import run_backtest
 from metrics import compute_all_metrics, format_summary_report
 from run_backtest import trades_to_dataframe
@@ -87,7 +87,7 @@ def api_run_backtest():
             data_dir=DATA_DIR,
             start_date=data.get('start_date', '2021-01-01'),
             end_date=data.get('end_date', '2025-12-31'),
-            universe_size=int(data.get('universe_size', 484)),
+            universe_size=0, # Will be set below
             initial_capital=float(data.get('initial_capital', 100000)),
             allocation_per_trade=float(data.get('allocation_per_trade', 20000)),
             leverage=float(data.get('leverage', 1.0)),
@@ -98,8 +98,20 @@ def api_run_backtest():
 
         t0 = time.time()
         
+        universe_type = data.get('universe_type', 'top_484')
+        
         # Select universe based on parameters using the in-memory data
-        universe = select_universe(ALL_DATA, config.universe_size, config.start_date, config.end_date)
+        if universe_type == 'top_484':
+            universe = select_universe(ALL_DATA, 484, config.start_date, config.end_date)
+        elif universe_type == 'all':
+            universe = ALL_DATA
+        elif universe_type in ['nifty50', 'nifty100', 'nifty200', 'nifty500']:
+            idx_symbols = get_index_symbols(universe_type)
+            universe = {sym: df for sym, df in ALL_DATA.items() if sym in idx_symbols}
+        else:
+            universe = select_universe(ALL_DATA, 484, config.start_date, config.end_date)
+            
+        config.universe_size = len(universe)
         
         # Run backtest
         result = run_backtest(universe, config)
@@ -113,6 +125,22 @@ def api_run_backtest():
         # Create equity curve image
         img_b64 = create_base64_plot(result.daily_equity)
         
+        # Serialize trades log
+        trades_list = []
+        for t in result.trades:
+            trades_list.append({
+                'symbol': t.symbol,
+                'signal_date': str(t.signal_date),
+                'entry_price': round(t.entry_price, 2),
+                'exit_date': str(t.exit_date),
+                'exit_price': round(t.exit_price, 2),
+                'gap_pct': round(t.gap_pct, 4),
+                'shares': t.shares,
+                'pnl': round(t.pnl, 2),
+                'allocated_capital': round(t.allocated_capital, 2),
+                'fees': round(t.fees, 2)
+            })
+
         # Return response
         response = {
             'status': 'success',
@@ -120,8 +148,22 @@ def api_run_backtest():
             'summary': report,
             'equity_curve_b64': img_b64,
             'total_trades': metrics.total_trades,
+            'positive_trades': metrics.positive_trades,
+            'negative_trades': metrics.negative_trades,
+            'win_rate': round(metrics.positive_rate, 2),
+            'target_hits': metrics.target_hit_count,
             'return_pct': round(metrics.return_pct, 2),
-            'max_drawdown': round(metrics.max_drawdown_pct, 2)
+            'max_drawdown': round(metrics.max_drawdown_pct, 2),
+            'gross_profit': round(metrics.gross_profit, 2),
+            'gross_loss': round(metrics.gross_loss, 2),
+            'profit_factor': round(metrics.profit_factor, 2) if metrics.profit_factor != float('inf') else 'Infinity',
+            'avg_return_per_trade': round(metrics.avg_return_per_trade, 2),
+            'ending_equity': round(metrics.ending_equity, 2),
+            'best_gap_pct': round(metrics.best_gap_pct, 2),
+            'worst_gap_pct': round(metrics.worst_gap_pct, 2),
+            'best_day_pnl': round(metrics.best_day_pnl, 2),
+            'worst_day_pnl': round(metrics.worst_day_pnl, 2),
+            'trades_log': trades_list
         }
         
         return jsonify(response)

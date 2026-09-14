@@ -34,6 +34,12 @@ class BacktestMetrics:
     ending_equity: float
     return_pct: float
     max_drawdown_pct: float
+    gross_profit: float
+    gross_loss: float
+    profit_factor: float
+    avg_return_per_trade: float
+    best_day_pnl: float
+    worst_day_pnl: float
 
     # Yearly
     yearly_returns: Dict[int, float]  # year -> return %
@@ -170,6 +176,19 @@ def compute_all_metrics(
     total_pnl = sum(t.pnl for t in trades)
     ending_equity = initial_capital + total_pnl
     return_pct = ((ending_equity / initial_capital) - 1.0) * 100.0 if initial_capital > 0 else 0.0
+    
+    gross_profit = sum(t.pnl for t in trades if t.pnl > 0)
+    gross_loss = abs(sum(t.pnl for t in trades if t.pnl < 0))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (float('inf') if gross_profit > 0 else 0.0)
+    avg_return = total_pnl / trade_metrics["total_trades"] if trade_metrics["total_trades"] > 0 else 0.0
+
+    if not daily_equity.empty and "equity" in daily_equity.columns and len(daily_equity) > 1:
+        daily_pnls = daily_equity["equity"].diff().dropna()
+        best_day_pnl = float(daily_pnls.max()) if not daily_pnls.empty else 0.0
+        worst_day_pnl = float(daily_pnls.min()) if not daily_pnls.empty else 0.0
+    else:
+        best_day_pnl = 0.0
+        worst_day_pnl = 0.0
 
     return BacktestMetrics(
         total_trades=trade_metrics["total_trades"],
@@ -187,6 +206,12 @@ def compute_all_metrics(
         ending_equity=ending_equity,
         return_pct=return_pct,
         max_drawdown_pct=max_dd,
+        gross_profit=gross_profit,
+        gross_loss=gross_loss,
+        profit_factor=profit_factor,
+        avg_return_per_trade=avg_return,
+        best_day_pnl=best_day_pnl,
+        worst_day_pnl=worst_day_pnl,
         yearly_returns=yearly,
     )
 

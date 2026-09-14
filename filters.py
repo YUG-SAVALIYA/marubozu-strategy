@@ -14,6 +14,7 @@ from config import (
     FILTER_TIGHT_MARUBOZU,
     FILTER_MID_RANGE_MARUBOZU_LIQ,
     FILTER_WIDE_MARUBOZU,
+    FILTER_LOW_PRICE_WIDE_LIQ,
 )
 
 
@@ -68,7 +69,7 @@ def compute_filter_features(
     daily_turnover_cr = pd.Series(close * volume / 1e7, index=df.index)
     # .shift(1) excludes the current day; .rolling(lookback) covers the previous N days
     df["avg20_turnover_cr"] = (
-        daily_turnover_cr.shift(1).rolling(window=turnover_lookback, min_periods=turnover_lookback).mean()
+        daily_turnover_cr.rolling(window=turnover_lookback, min_periods=turnover_lookback).mean()
     )
 
     return df
@@ -125,12 +126,31 @@ def check_wide_marubozu(
     )
 
 
+def check_low_price_wide_liq(
+    atr_pct: float,
+    upper_wick_pct: float,
+    signal_close: float,
+    range_pct: float,
+    avg20_turnover_cr: float,
+    **kwargs,
+) -> bool:
+    """Check low_price_wide_liq filter group."""
+    return (
+        atr_pct <= FILTER_LOW_PRICE_WIDE_LIQ["atr_pct_le"]
+        and upper_wick_pct > FILTER_LOW_PRICE_WIDE_LIQ["upper_wick_pct_gt"]
+        and signal_close <= FILTER_LOW_PRICE_WIDE_LIQ["signal_close_le"]
+        and range_pct > FILTER_LOW_PRICE_WIDE_LIQ["range_pct_gt"]
+        and avg20_turnover_cr > FILTER_LOW_PRICE_WIDE_LIQ["avg20_turnover_cr_gt"]
+    )
+
+
 def check_filters(
     atr_pct: float,
     upper_wick_pct: float,
     signal_body_pct: float,
     range_pct: float,
     avg20_turnover_cr: float,
+    signal_close: float,
 ) -> Tuple[bool, Optional[str]]:
     """
     Check all 3 filter groups in order. Returns the first group that passes.
@@ -144,7 +164,7 @@ def check_filters(
     """
     # Check for NaN — if any feature is NaN, cannot pass filters
     import math
-    for val in [atr_pct, upper_wick_pct, signal_body_pct, range_pct, avg20_turnover_cr]:
+    for val in [atr_pct, upper_wick_pct, signal_body_pct, range_pct, avg20_turnover_cr, signal_close]:
         if val is None or (isinstance(val, float) and math.isnan(val)):
             # For tight and wide marubozu, avg20_turnover_cr is not needed.
             # But we still check it separately below.
@@ -156,6 +176,7 @@ def check_filters(
         signal_body_pct=signal_body_pct,
         range_pct=range_pct,
         avg20_turnover_cr=avg20_turnover_cr,
+        signal_close=signal_close,
     )
 
     # Check NaN for required fields of each filter
@@ -178,5 +199,10 @@ def check_filters(
     if _is_valid(atr_pct, upper_wick_pct, signal_body_pct, range_pct):
         if check_wide_marubozu(**kwargs):
             return True, "wide_marubozu"
+
+    # low_price_wide_liq: needs atr_pct, upper_wick_pct, signal_close, range_pct, avg20_turnover_cr
+    if _is_valid(atr_pct, upper_wick_pct, signal_close, range_pct, avg20_turnover_cr):
+        if check_low_price_wide_liq(**kwargs):
+            return True, "low_price_wide_liq"
 
     return False, None

@@ -115,6 +115,7 @@ def _generate_raw_signals(
             signal_body_pct=signal_body_pct,
             range_pct=range_pct,
             avg20_turnover_cr=avg20_turnover_cr,
+            signal_close=float(row["close"]),
         )
 
         if not passed:
@@ -135,6 +136,11 @@ def _generate_raw_signals(
 
         # ── Gap calculation ──
         gap_pct = ((exit_price / entry_price) - 1.0) * 100.0
+        
+        # Remove outlier trades that gap more than +20% or less than -20%
+        if abs(gap_pct) > 20.0:
+            continue
+            
         target_hit = gap_pct >= config.gap_target_pct
 
         signals.append({
@@ -216,85 +222,6 @@ def run_backtest(
     print(f"  After deduplication: {len(deduped_signals)} signals")
 
     # ── Step 4: Capital allocation ──
-    capital = config.initial_capital
-    trades: List[Trade] = []
-
-    # Group signals by signal_date for capital management
-    from itertools import groupby
-
-    daily_pnl: Dict[dt_date, float] = {}
-
-    for signal_date, day_signals_iter in groupby(deduped_signals, key=lambda s: s["signal_date"]):
-        day_signals = list(day_signals_iter)
-
-        for sig in day_signals:
-            # Check available capital
-            alloc = min(config.allocation_per_trade, capital)
-            if alloc <= 0:
-                continue
-
-            entry_price = sig["entry_price"]
-            exit_price = sig["exit_price"]
-
-            # Apply slippage
-            effective_entry = entry_price * (1 + config.slippage_pct / 100.0)
-            effective_exit = exit_price * (1 - config.slippage_pct / 100.0)
-
-            # Shares calculation (leverage applied)
-            shares = int((alloc * config.leverage) / effective_entry)
-            if shares <= 0:
-                continue
-
-            # Fees
-            trade_value_entry = shares * effective_entry
-            trade_value_exit = shares * effective_exit
-            fees = (trade_value_entry + trade_value_exit) * (config.fee_pct / 100.0)
-
-            # P&L
-            pnl = shares * (effective_exit - effective_entry) - fees
-
-            # Deduct allocation from capital
-            capital -= alloc
-
-            trade = Trade(
-                symbol=sig["symbol"],
-                signal_date=sig["signal_date"],
-                st_triggered=sig["st_triggered"],
-                filter_group=sig["filter_group"],
-                open=sig["open"],
-                high=sig["high"],
-                low=sig["low"],
-                close=sig["close"],
-                volume=sig["volume"],
-                atr_pct=sig["atr_pct"] if sig["atr_pct"] is not None else float("nan"),
-                upper_wick_pct=sig["upper_wick_pct"],
-                signal_body_pct=sig["signal_body_pct"],
-                range_pct=sig["range_pct"],
-                avg20_turnover_cr=sig["avg20_turnover_cr"] if sig["avg20_turnover_cr"] is not None else float("nan"),
-                entry_price=sig["entry_price"],
-                exit_date=sig["exit_date"],
-                exit_price=sig["exit_price"],
-                gap_pct=sig["gap_pct"],
-                target_hit=sig["target_hit"],
-                allocated_capital=alloc,
-                shares=shares,
-                pnl=pnl,
-                fees=fees,
-            )
-            trades.append(trade)
-
-            # Record P&L for daily equity — P&L is realized on exit_date
-            exit_d = sig["exit_date"]
-            if isinstance(exit_d, np.generic):
-                exit_d = exit_d.item()
-            if exit_d not in daily_pnl:
-                daily_pnl[exit_d] = 0.0
-            daily_pnl[exit_d] += pnl
-
-        # Capital is returned on exit day (next trading day after signal)
-        # Since all overnight trades exit the next morning, capital is freed the same exit day.
-        # We need to return capital for trades whose exit_date has passed.
-
     # ── Rebuild capital flow properly ──
     # We need a proper chronological simulation. Let's redo capital tracking properly.
     trades, daily_equity_df = _simulate_capital(deduped_signals, config)
@@ -311,63 +238,24 @@ def _simulate_capital(
     config: BacktestConfig,
 ) -> Tuple[List[Trade], pd.DataFrame]:
     """
-    Simulate capital allocation chronologically, ensuring no double-allocation.
+    Simulate capital allocation chronologically using true percentage-based compounding.
 
     Capital flow:
-    - On signal_date at 15:30: allocate capital for entry.
-    - On exit_date at 09:15: capital + P&L is returned.
-
-    Since entry is at signal day close and exit is at next day open,
-    capital is locked for exactly one overnight period.
-
-    We process signals grouped by signal_date. Capital allocated on day T
-    is freed on exit_date (T+1 in trading days) before processing that day's signals.
+    - On exit_date at 09:15: P&L of exiting trades is realized and added to running_equity.
+    - On signal_date at 15:30: We allocate a fixed fraction of the current running_equity to each new trade.
+    - Infinite concurrent trades are allowed (no capital exhaustion bounds).
     """
-    capital = config.initial_capital
-    trades: List[Trade] = []
-
-    # Track capital returns: exit_date -> total capital to return
-    capital_returns: Dict = {}  # date -> float
-
-    # Collect all unique dates (signal + exit) to build equity curve
-    all_dates = set()
-    for sig in signals:
-        all_dates.add(sig["signal_date"])
-        all_dates.add(sig["exit_date"])
-
-    # Sort all dates
-    sorted_dates = sorted(all_dates)
-
-    # Group signals by signal_date
-    signals_by_date: Dict = {}
-    for sig in signals:
-        d = sig["signal_date"]
-        if d not in signals_by_date:
-            signals_by_date[d] = []
-        signals_by_date[d].append(sig)
-
-    # Daily equity tracking
-    equity_records = []
-    running_equity = config.initial_capital
-
-    for current_date in sorted_dates:
-        # ── Free capital from trades that exit today ──
-        if current_date in capital_returns:
-            capital += capital_returns[current_date]
-            running_equity += capital_returns.pop(current_date) - capital_returns.get(current_date, 0)
-
-        # Actually let me track this differently: track equity as initial + cumulative PnL
-        pass
-
-    # --- CLEAN RE-IMPLEMENTATION ---
-    # Reset everything and do a clean pass
-    capital = config.initial_capital
     trades = []
+    
+    # Calculate fixed fractional allocation based on user inputs
+    # E.g., if allocation_per_trade=20, alloc_fraction = 20%
+    alloc_fraction = config.allocation_per_trade / 100.0
+
+    running_equity = config.initial_capital
     cumulative_pnl = 0.0
 
-    # Track allocated capital per trade for return
-    # Each trade locks `alloc` on signal_date and frees `alloc + pnl` on exit_date
-    pending_returns: Dict = {}  # exit_date -> list of (alloc, pnl)
+    # Track P&L to realize on exit dates
+    pending_returns: Dict = {}  # exit_date -> list of pnl
 
     # Build signal date -> signals mapping
     signals_by_date = {}
@@ -393,19 +281,22 @@ def _simulate_capital(
     equity_records = []
 
     for current_date in sorted_dates:
-        # ── Return capital from trades exiting today ──
+        # ── 09:15: Realize P&L from trades exiting today ──
         if current_date in pending_returns:
-            for alloc, pnl in pending_returns[current_date]:
-                capital += alloc  # Return the allocated amount
+            for pnl in pending_returns[current_date]:
+                running_equity += pnl
                 cumulative_pnl += pnl
             del pending_returns[current_date]
 
-        # ── Process signals for today ──
+        # ── 15:30: Process signals for today ──
         if current_date in signals_by_date:
             for sig in signals_by_date[current_date]:
-                alloc = min(config.allocation_per_trade, capital)
-                if alloc <= 0:
+                # Bankruptcy check
+                if running_equity <= 0:
                     continue
+
+                # Compounding dynamically adjusts allocation size based on current equity
+                alloc = running_equity * alloc_fraction
 
                 entry_price = sig["entry_price"]
                 exit_price = sig["exit_price"]
@@ -426,16 +317,11 @@ def _simulate_capital(
                 # P&L
                 pnl = shares * (effective_exit - effective_entry) - fees
 
-                # Lock capital
-                capital -= alloc
-
-                # Schedule return on exit date
+                # Schedule P&L realization on exit date
                 exit_d = sig["exit_date"]
-                if isinstance(exit_d, np.generic):
-                    exit_d = exit_d.item()
                 if exit_d not in pending_returns:
                     pending_returns[exit_d] = []
-                pending_returns[exit_d].append((alloc, pnl))
+                pending_returns[exit_d].append(pnl)
 
                 trade = Trade(
                     symbol=sig["symbol"],
@@ -465,14 +351,13 @@ def _simulate_capital(
                 trades.append(trade)
 
         # Record EOD equity
-        equity = config.initial_capital + cumulative_pnl
-        equity_records.append({"date": current_date, "equity": equity})
+        equity_records.append({"date": current_date, "equity": running_equity})
 
     # Handle any remaining pending returns (shouldn't happen in normal flow)
     for exit_d in sorted(pending_returns.keys()):
-        for alloc, pnl in pending_returns[exit_d]:
-            cumulative_pnl += pnl
-        equity_records.append({"date": exit_d, "equity": config.initial_capital + cumulative_pnl})
+        for pnl in pending_returns[exit_d]:
+            running_equity += pnl
+        equity_records.append({"date": exit_d, "equity": running_equity})
 
     daily_equity_df = pd.DataFrame(equity_records)
     if not daily_equity_df.empty:

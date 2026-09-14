@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily_ST_M Backtester</title>
+    <title>Daily_ST_M Backtester PRO</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- DataTables for easy table sorting -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,8 +30,15 @@
                         <input type="date" id="end_date" name="end_date" value="2025-12-31" required>
                     </div>
                     <div class="input-group">
-                        <label for="universe_size">Universe Size (Top N)</label>
-                        <input type="number" id="universe_size" name="universe_size" value="484" required>
+                        <label for="universe_type">Stock Universe</label>
+                        <select id="universe_type" name="universe_type" class="form-select">
+                            <option value="top_484">Top 484 (By Turnover)</option>
+                            <option value="nifty50">Nifty 50</option>
+                            <option value="nifty100">Nifty 100</option>
+                            <option value="nifty200">Nifty 200</option>
+                            <option value="nifty500">Nifty 500</option>
+                            <option value="all">All NSE Equity</option>
+                        </select>
                     </div>
                 </div>
 
@@ -40,8 +49,8 @@
                         <input type="number" id="initial_capital" name="initial_capital" value="100000" step="10000" required>
                     </div>
                     <div class="input-group">
-                        <label for="allocation_per_trade">Allocation / Trade (₹)</label>
-                        <input type="number" id="allocation_per_trade" name="allocation_per_trade" value="20000" step="1000" required>
+                        <label for="allocation_per_trade">Allocation % Per Trade</label>
+                        <input type="number" id="allocation_per_trade" name="allocation_per_trade" value="20" step="0.1" required>
                     </div>
                     <div class="input-group">
                         <label for="leverage">Leverage</label>
@@ -75,24 +84,11 @@
         <!-- Main Content Area -->
         <main class="main-content">
             <header class="top-nav glass-panel">
-                <div class="stats-overview">
-                    <div class="stat-card">
-                        <span class="stat-label">Return</span>
-                        <span class="stat-value highlight" id="stat-return">--%</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-label">Max Drawdown</span>
-                        <span class="stat-value error" id="stat-dd">--%</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-label">Total Trades</span>
-                        <span class="stat-value" id="stat-trades">--</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-label">Execution Time</span>
-                        <span class="stat-value" id="stat-time">--s</span>
-                    </div>
-                </div>
+                <nav class="tabs">
+                    <button class="tab-btn active" data-target="tab-dashboard">Dashboard</button>
+                    <button class="tab-btn" data-target="tab-ledger">Day-Wise Ledger</button>
+                    <button class="tab-btn" data-target="tab-trades">Trade Log</button>
+                </nav>
             </header>
 
             <div class="results-container">
@@ -102,22 +98,126 @@
                     <p>Adjust parameters on the left and click "Run Backtest" to begin.</p>
                 </div>
 
-                <div id="results-view" class="results-grid hidden">
-                    <div class="chart-section glass-panel">
+                <!-- Tab: Dashboard -->
+                <div id="tab-dashboard" class="tab-content hidden">
+                    <div class="stats-grid">
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Net Portfolio (₹)</span>
+                            <span class="stat-value highlight" id="stat-net-portfolio">--</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Total Return (%)</span>
+                            <span class="stat-value highlight" id="stat-return">--%</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Max Drawdown (%)</span>
+                            <span class="stat-value error" id="stat-dd">--%</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Target Hits</span>
+                            <span class="stat-value" id="stat-target-hits">--</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Negative (SL) Hits</span>
+                            <span class="stat-value error" id="stat-sl-hits">--</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Total Trades</span>
+                            <span class="stat-value" id="stat-trades">--</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Pos / Neg Trades</span>
+                            <span class="stat-value"><span id="stat-pos" class="highlight">--</span> / <span id="stat-neg" class="error">--</span></span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Avg Return / Trade (₹)</span>
+                            <span class="stat-value" id="stat-avg-return">--</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Win Rate</span>
+                            <span class="stat-value" id="stat-win-rate">--%</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Profit Factor</span>
+                            <span class="stat-value" id="stat-profit-factor">--</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Execution Time</span>
+                            <span class="stat-value" id="stat-time">--s</span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Best Gap / Worst Gap</span>
+                            <span class="stat-value"><span id="stat-best-gap" class="highlight">--%</span> / <span id="stat-worst-gap" class="error">--%</span></span>
+                        </div>
+                        <div class="stat-card glass-panel">
+                            <span class="stat-label">Best Day / Worst Day (₹)</span>
+                            <span class="stat-value"><span id="stat-best-day" class="highlight">--</span> / <span id="stat-worst-day" class="error">--</span></span>
+                        </div>
+                    </div>
+
+                    <div class="chart-section glass-panel mt-20">
                         <h3>Equity Curve</h3>
                         <div class="chart-container">
                             <img id="equity-chart" src="" alt="Equity Curve">
                         </div>
                     </div>
-                    
-                    <div class="summary-section glass-panel">
-                        <h3>Summary Report</h3>
-                        <pre id="summary-text" class="summary-pre"></pre>
+                </div>
+
+                <!-- Tab: Day-Wise Ledger -->
+                <div id="tab-ledger" class="tab-content hidden glass-panel full-height-panel">
+                    <h3>Day-Wise Ledger</h3>
+                    <p class="text-muted mb-20">Aggregated performance by trading day (Exit Date).</p>
+                    <div class="table-container">
+                        <table id="ledger-table" class="display" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th></th> <!-- Expand button -->
+                                    <th>Date</th>
+                                    <th>Buys</th>
+                                    <th>Sells</th>
+                                    <th>Capital Deployed (₹)</th>
+                                    <th>Realized Gross Profit (₹)</th>
+                                    <th>Realized Gross Loss (₹)</th>
+                                    <th>Realized Net P&L (₹)</th>
+                                    <th>Realized Net P&L (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
+
+                <!-- Tab: Trade Log -->
+                <div id="tab-trades" class="tab-content hidden glass-panel full-height-panel">
+                    <h3>Complete Trade Log</h3>
+                    <p class="text-muted mb-20">Detailed record of every trade executed.</p>
+                    <div class="table-container">
+                        <table id="trades-table" class="display" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Action</th>
+                                    <th>Entry Time</th>
+                                    <th>Entry Price</th>
+                                    <th>Exit Time</th>
+                                    <th>Exit Price</th>
+                                    <th>Gap %</th>
+                                    <th>Qty</th>
+                                    <th>Invested (₹)</th>
+                                    <th>P&L (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
             </div>
         </main>
     </div>
+    
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
