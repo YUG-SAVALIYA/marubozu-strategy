@@ -1,19 +1,30 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from typing import List, Dict
 import os
 import json
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "live_signals.db")
+# Update these parameters with your pgAdmin setup
+DB_PARAMS = {
+    "host": "localhost",
+    "dbname": "marubozu",
+    "user": "postgres",
+    "password": "postgres",
+    "port": 5432
+}
+
+def get_db_connection():
+    return psycopg2.connect(**DB_PARAMS)
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Existing live_signals table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS live_signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             signal_date TEXT,
             symbol TEXT,
             entry_price REAL,
@@ -45,7 +56,7 @@ def init_db():
     # Paper trades table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS paper_trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol TEXT,
             entry_date TEXT,
             entry_price REAL,
@@ -67,7 +78,7 @@ def init_db():
             high REAL,
             low REAL,
             close REAL,
-            volume INTEGER
+            volume BIGINT
         )
     ''')
     
@@ -80,56 +91,53 @@ def init_db():
     conn.close()
 
 def get_portfolio() -> Dict:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute('SELECT * FROM portfolio WHERE id = 1')
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else {'available_capital': 0.0, 'total_equity': 0.0}
 
 def update_portfolio(available_capital: float, total_equity: float):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('UPDATE portfolio SET available_capital = ?, total_equity = ? WHERE id = 1', 
+    cursor.execute('UPDATE portfolio SET available_capital = %s, total_equity = %s WHERE id = 1', 
                    (available_capital, total_equity))
     conn.commit()
     conn.close()
 
 def save_paper_trade(symbol: str, entry_date: str, entry_price: float, quantity: int, invested_amount: float):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO paper_trades (symbol, entry_date, entry_price, quantity, invested_amount, status)
-        VALUES (?, ?, ?, ?, ?, 'OPEN')
+        VALUES (%s, %s, %s, %s, %s, 'OPEN')
     ''', (symbol, entry_date, entry_price, quantity, invested_amount))
     conn.commit()
     conn.close()
 
 def update_paper_trade(trade_id: int, exit_date: str, exit_price: float, pnl: float):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE paper_trades
-        SET exit_date = ?, exit_price = ?, pnl = ?, status = 'CLOSED'
-        WHERE id = ?
+        SET exit_date = %s, exit_price = %s, pnl = %s, status = 'CLOSED'
+        WHERE id = %s
     ''', (exit_date, exit_price, pnl, trade_id))
     conn.commit()
     conn.close()
 
 def get_open_trades() -> List[Dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM paper_trades WHERE status = "OPEN"')
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM paper_trades WHERE status = 'OPEN'")
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 def get_all_paper_trades() -> List[Dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute('SELECT * FROM paper_trades ORDER BY id DESC')
     rows = cursor.fetchall()
     conn.close()
@@ -138,7 +146,7 @@ def get_all_paper_trades() -> List[Dict]:
 def save_signals(signals: List[Dict]):
     if not signals:
         return
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     for sig in signals:
@@ -149,7 +157,7 @@ def save_signals(signals: List[Dict]):
             INSERT INTO live_signals (
                 signal_date, symbol, entry_price, st_triggered, filter_group,
                 atr_pct, avg20_turnover_cr, upper_wick_pct, signal_body_pct, range_pct, raw_data
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             str(sig['signal_date']),
             sig['symbol'],
@@ -167,9 +175,8 @@ def save_signals(signals: List[Dict]):
     conn.close()
 
 def get_latest_signals() -> List[Dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
     cursor.execute('SELECT MAX(signal_date) as max_date FROM live_signals')
     row = cursor.fetchone()
@@ -181,7 +188,7 @@ def get_latest_signals() -> List[Dict]:
     
     cursor.execute('''
         SELECT * FROM live_signals
-        WHERE signal_date = ?
+        WHERE signal_date = %s
         ORDER BY symbol ASC
     ''', (max_date,))
     

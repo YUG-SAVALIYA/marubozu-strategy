@@ -4,11 +4,12 @@ Load parquet files, normalize dates, select universe by median daily turnover.
 """
 import os
 import glob
-import sqlite3
+from sqlalchemy import create_engine
 from typing import Dict, Optional
 
 import pandas as pd
 import numpy as np
+from database import DB_PARAMS
 
 
 def load_single_file(filepath: str) -> pd.DataFrame:
@@ -50,19 +51,14 @@ def load_all_daily_data(data_dir: str) -> Dict[str, pd.DataFrame]:
     Load all historical data directly from SQLite database for instant loading.
     Returns dict mapping symbol -> DataFrame with columns: date, open, high, low, close, volume.
     """
-    db_path = r"D:\overnight\live_signals.db"
-    
-    if not os.path.exists(db_path):
-        raise FileNotFoundError(f"Database not found at {db_path}")
-        
-    conn = sqlite3.connect(db_path)
+    connection_string = f"postgresql://{DB_PARAMS['user']}:{DB_PARAMS['password']}@{DB_PARAMS['host']}:{DB_PARAMS['port']}/{DB_PARAMS['dbname']}"
+    engine = create_engine(connection_string)
     
     # Read entire market data into memory instantly
-    df = pd.read_sql("SELECT * FROM market_data", conn)
-    conn.close()
+    df = pd.read_sql("SELECT * FROM market_data", engine)
     
     if df.empty:
-        raise ValueError("market_data table is empty in SQLite database!")
+        raise ValueError("market_data table is empty in PostgreSQL database!")
         
     if "date" in df.columns:
         df["date"] = pd.to_datetime(df["date"]).dt.date
