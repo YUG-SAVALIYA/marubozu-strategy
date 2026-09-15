@@ -4,6 +4,7 @@ Load parquet files, normalize dates, select universe by median daily turnover.
 """
 import os
 import glob
+import sqlite3
 from typing import Dict, Optional
 
 import pandas as pd
@@ -11,8 +12,11 @@ import numpy as np
 
 
 def load_single_file(filepath: str) -> pd.DataFrame:
-    """Load a single _Day.parquet file and normalize its datetime column to date."""
-    df = pd.read_parquet(filepath)
+    """Load a single _Day file and normalize its datetime column to date."""
+    if filepath.endswith('.csv'):
+        df = pd.read_csv(filepath)
+    else:
+        df = pd.read_parquet(filepath)
 
     # Normalize datetime to date (drop time/tz info)
     df["date"] = pd.to_datetime(df["datetime"]).dt.date
@@ -36,33 +40,38 @@ def load_single_file(filepath: str) -> pd.DataFrame:
 
 
 def extract_symbol(filepath: str) -> str:
-    """Extract symbol name from filename like 'RELIANCE_Day.parquet'."""
+    """Extract symbol name from filename like 'RELIANCE_Day.parquet' or 'RELIANCE_Day.csv'."""
     basename = os.path.basename(filepath)
-    return basename.replace("_Day.parquet", "")
+    return basename.replace("_Day.parquet", "").replace("_Day.csv", "")
 
 
 def load_all_daily_data(data_dir: str) -> Dict[str, pd.DataFrame]:
     """
-    Load all *_Day.parquet files from data_dir.
+    Load all historical data directly from SQLite database for instant loading.
     Returns dict mapping symbol -> DataFrame with columns: date, open, high, low, close, volume.
     """
-    pattern = os.path.join(data_dir, "*_Day.parquet")
-    files = sorted(glob.glob(pattern))
+    db_path = r"D:\overnight\live_signals.db"
+    
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"Database not found at {db_path}")
+        
+    conn = sqlite3.connect(db_path)
+    
+    # Read entire market data into memory instantly
+    df = pd.read_sql("SELECT * FROM market_data", conn)
+    conn.close()
+    
+    if df.empty:
+        raise ValueError("market_data table is empty in SQLite database!")
+        
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"]).dt.date
 
-    if not files:
-        raise FileNotFoundError(f"No *_Day.parquet files found in {data_dir}")
-
-    all_data: Dict[str, pd.DataFrame] = {}
-    for filepath in files:
-        symbol = extract_symbol(filepath)
-        try:
-            df = load_single_file(filepath)
-            if len(df) > 0:
-                all_data[symbol] = df
-        except Exception as e:
-            print(f"Warning: Skipping {symbol} due to error: {e}")
-
-    print(f"Loaded {len(all_data)} symbols from {data_dir}")
+    # Group by symbol and return dict
+    all_data = {symbol: group.drop(columns=['symbol']).reset_index(drop=True) 
+                for symbol, group in df.groupby('symbol')}
+                
+    print(f"Loaded {len(all_data)} symbols from database")
     return all_data
 
 

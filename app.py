@@ -22,7 +22,7 @@ CORS(app)
 
 # In-memory storage for the raw data to avoid reloading from disk on every run
 print("Initializing app and loading data into memory (this may take 20-30 seconds)...")
-DATA_DIR = r"C:\Users\Yug\Desktop\datas"
+DATA_DIR = r"D:\backtesting\backtesting\data"
 ALL_DATA = load_all_daily_data(DATA_DIR)
 print(f"Data loading complete! Loaded {len(ALL_DATA)} symbols.")
 

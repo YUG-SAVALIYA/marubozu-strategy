@@ -35,7 +35,7 @@ $(document).ready(function() {
         $(this).addClass('active');
         
         const target = $(this).data('target');
-        if (!welcomeState.hasClass('hidden')) return; // Do nothing if no data yet
+        if (!welcomeState.hasClass('hidden')) return; // Do nothing if no data yet for other tabs
 
         tabContents.addClass('hidden');
         $('#' + target).removeClass('hidden');
