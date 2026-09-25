@@ -69,20 +69,14 @@ import pandas as pd
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA_DIR = PROJECT_DIR / "top_200_files" / "content" / "drive" / "MyDrive" / "All_Data"
-DEFAULT_TOP800_CSV = (
-    PROJECT_DIR
-    / "static"
-    / "data"
-    / "daily_stm_top_liquid_company_csvs"
-    / "top_800_liquid_symbols_only_2021_2025.csv"
-)
+DEFAULT_DATA_DIR = Path("D:/datas")
+DEFAULT_TOP800_CSV = PROJECT_DIR / "top_800_liquid_stocks.csv"
 
 
 @dataclass
 class DailySTMConfig:
     start_date: str = "2021-01-01"
-    end_date: str = "2025-12-31"
+    end_date: str = "2026-04-30"
     data_dir: Path = DEFAULT_DATA_DIR
     companies: str = "TOP800"  # TOP800, TOP484, ALL, or comma-separated symbols
     top_symbols: int = 800
@@ -213,13 +207,13 @@ def load_symbols(config: DailySTMConfig) -> list[str] | None:
     if upper.startswith("TOP"):
         csv_path = config.top_symbols_csv
         if upper == "TOP484":
-            csv_path = csv_path.with_name("top_484_liquid_symbols_only_2021_2025.csv")
+            csv_path = csv_path.with_name("top_484_liquid_stocks.csv")
         elif upper == "TOP600":
-            csv_path = csv_path.with_name("top_600_liquid_symbols_only_2021_2025.csv")
+            csv_path = csv_path.with_name("top_600_liquid_stocks.csv")
         elif upper == "TOP750":
-            csv_path = csv_path.with_name("top_750_liquid_symbols_only_2021_2025.csv")
+            csv_path = csv_path.with_name("top_750_liquid_stocks.csv")
         elif upper == "TOP800":
-            csv_path = csv_path.with_name("top_800_liquid_symbols_only_2021_2025.csv")
+            csv_path = csv_path.with_name("top_800_liquid_stocks.csv")
 
         top_n = config.top_symbols
         try:
@@ -582,20 +576,20 @@ def _json_default(value: Any) -> Any:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run standalone Daily_ST_M strategy backtest.")
-    parser.add_argument("--start-date", default="2021-01-01")
-    parser.add_argument("--end-date", default="2025-12-31")
+    parser.add_argument("--start-date", default="2020-01-01")
+    parser.add_argument("--end-date", default="2026-04-30")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
     parser.add_argument("--companies", default="TOP800")
     parser.add_argument("--top-symbols", type=int, default=800)
     parser.add_argument("--top-symbols-csv", default=str(DEFAULT_TOP800_CSV))
-    parser.add_argument("--signal-time", default="15:20")
+    parser.add_argument("--signal-time", default="15:05")
     parser.add_argument("--exit-time", default="09:15")
     parser.add_argument("--gap-target-pct", type=float, default=1.0)
     parser.add_argument("--open-mismatch-mode", default="strict", choices=["strict", "all", "off", "none"])
     parser.add_argument("--open-mismatch-max-pct", type=float, default=1.0)
-    parser.add_argument("--regime-filter", default="both", choices=["strong", "normal", "both"])
+    parser.add_argument("--regime-filter", default="strong", choices=["strong", "normal", "both"])
 
-    parser.add_argument("--strong-mkt-up-pct", type=float, default=60.0)
+    parser.add_argument("--strong-mkt-up-pct", type=float, default=45.0)
     parser.add_argument("--strong-breadth-pct", type=float, default=5.0)
     parser.add_argument("--strong-ret5-pct", type=float, default=20.0)
     parser.add_argument("--strong-ret1-pct", type=float, default=3.0)
