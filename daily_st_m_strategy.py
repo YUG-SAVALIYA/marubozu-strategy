@@ -87,7 +87,7 @@ class DailySTMConfig:
     companies: str = "TOP800"  # TOP800, TOP484, ALL, or comma-separated symbols
     top_symbols: int = 800
     top_symbols_csv: Path = DEFAULT_TOP800_CSV
-    signal_time: str = "15:20"
+    signal_time: str = "15:05"
     exit_time: str = "09:15"
     gap_target_pct: float = 1.0
 
@@ -97,10 +97,10 @@ class DailySTMConfig:
     open_mismatch_max_pct: float = 1.0
 
     # strong, normal, or both
-    regime_filter: str = "both"
+    regime_filter: str = "strong"
 
     # Strong regime
-    strong_mkt_up_pct: float = 60.0
+    strong_mkt_up_pct: float = 45.0
     strong_breadth_pct: float = 5.0
     strong_ret5_pct: float = 20.0
     strong_ret1_pct: float = 3.0
